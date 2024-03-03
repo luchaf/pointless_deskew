@@ -1,12 +1,12 @@
 import streamlit as st
 from PIL import Image
 import os
-import time
-import tempfile
 from transformers import BertTokenizer
 from doctr.models import ocr_predictor
 
-from pointless_deskew import PointlessDeskewImageProcessor
+from pointless_deskew_text_analyzer import PointlessDeskewTextAnalyzer
+from pointless_deskew_visualizations import PointlessDeskewImageVisualizer
+from pointless_deskew_image_processor import PointlessDeskewImageProcessor
 
 
 def app():
@@ -96,7 +96,11 @@ def app():
     # Deskew the image #
     ####################
     if upload_button and image_to_process:
-        img_processor = PointlessDeskewImageProcessor(predictor, tokenizer)
+        # Create instances of text_analyzer, visualizer and img_processor
+        text_analyzer = PointlessDeskewTextAnalyzer(predictor, tokenizer)
+        visualizer = PointlessDeskewImageVisualizer(in_streamlit=True)
+        img_processor = PointlessDeskewImageProcessor(text_analyzer, visualizer)
+        # Deskew the uploaded image
         img_processor.process_and_display_image_in_streamlit_app(
             image_to_process, allow_up_to_180_degrees
         )
