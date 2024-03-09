@@ -8,7 +8,6 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import streamlit as st
-
 from PIL import Image
 from skimage.color import rgb2gray, rgba2rgb
 from skimage.feature import canny
@@ -22,8 +21,7 @@ class PointlessDeskewImageProcessor:
         self.visualizer = visualizer
 
     def convert_to_grayscale(self, image: np.ndarray) -> np.ndarray:
-        """
-        Convert an input image to grayscale.
+        """Convert an input image to grayscale.
 
         This function first checks if the input image is in RGBA format (4 channels). If it is,
         it converts the image to RGB format. Then, it converts the RGB or the original image
@@ -48,27 +46,30 @@ class PointlessDeskewImageProcessor:
 
     def perform_hough_transform(
         self, img_gray: np.ndarray, sigma: float, num_angles: int
-    ) -> Tuple[np.ndarray, List[float], List[float]]:
-        """
-        Perform the Hough Transform on a grayscale image to detect lines.
+    ) -> Tuple[np.ndarray, List[float], List[float], np.ndarray]:
+        """Performs the Hough Transform on a grayscale image to detect lines.
 
-        This function first applies the Canny edge detection algorithm to the input grayscale image.
-        Then, it performs the Hough Line Transform on the detected edges. The Hough Transform is used
-        to detect lines in the image, represented in the Hough space (accumulator array) with corresponding
-        angles and distances.
+        This function applies the Canny edge detection algorithm to the input grayscale image
+        to identify edges. It then performs the Hough Line Transform on these edges to detect lines.
+        The Hough Transform detects lines by finding accumulations in the Hough space, represented by
+        an accumulator array along with corresponding angles and distances for detected lines.
 
         Args:
-            img_gray (np.ndarray): A grayscale image array.
-            sigma (float): The standard deviation of the Gaussian filter used in the Canny edge detector.
-            num_angles (int): The number of angles to consider in the Hough Transform. More angles provide
-                            finer angular resolution.
+            img_gray (np.ndarray): The input grayscale image array.
+            sigma (float): The standard deviation for the Gaussian filter used in Canny edge detection.
+            num_angles (int): The number of angles to sample in the Hough Transform, affecting the angular resolution.
 
         Returns:
-            Tuple[np.ndarray, List[float], List[float]]: A tuple containing:
-                - The accumulator array from the Hough Transform.
-                - A list of angles (in radians) corresponding to the peaks in the accumulator array.
-                - A list of distances (in pixel units) corresponding to the peaks in the accumulator array.
-                - Edges
+            Tuple[np.ndarray, List[float], List[float], np.ndarray]: A tuple containing:
+                - The accumulator array from the Hough Transform, indicating the strength of line detections.
+                - A list of angles (in radians) corresponding to the peaks in the accumulator array, representing the detected line orientations.
+                - A list of distances (in pixel units) from the origin to the detected lines, corresponding to the peaks in the accumulator array.
+                - The edges detected in the input image as a result of applying the Canny edge detector.
+
+        Example:
+            >>> img_gray = np.array(Image.open('path/to/image').convert('L'))
+            >>> accumulator, angles, distances, edges = perform_hough_transform(img_gray, sigma=2, num_angles=180)
+            >>> # Use accumulator, angles, distances, and edges for further analysis or visualization
         """
 
         # Apply Canny edge detection to the grayscale image
@@ -85,8 +86,7 @@ class PointlessDeskewImageProcessor:
     def filter_and_correct_angles(
         self, angles_peaks: List[float], min_angle: float, max_angle: float
     ) -> List[float]:
-        """
-        Filters and corrects a list of angle peaks to ensure they fall within a specified range.
+        """Filters and corrects a list of angle peaks to ensure they fall within a specified range.
 
         This function performs two main operations on the input list of angles: correction and filtering.
         The correction step adjusts each angle by adding π/4, then modulo π/2, and subtracting π/4 again.
@@ -97,15 +97,14 @@ class PointlessDeskewImageProcessor:
         and maximum angle range. This step ensures that only angles of interest, as defined by the min_angle
         and max_angle parameters, are retained for further analysis or use.
 
-        Parameters:
-        - angles_peaks (List[float]): A list of angles (in radians) to be corrected and filtered.
-        - min_angle (float): The minimum allowable angle (in radians) after correction.
-        - max_angle (float): The maximum allowable angle (in radians) after correction.
+        Args:
+            angles_peaks (List[float]): A list of angles (in radians) to be corrected and filtered.
+            min_angle (float): The minimum allowable angle (in radians) after correction.
+            max_angle (float): The maximum allowable angle (in radians) after correction.
 
         Returns:
-        - List[float]: A list of corrected angles that fall within the specified min and max angle range.
+            List[float]: A list of corrected angles that fall within the specified minimum and maximum angle range.
         """
-
         # Correct the angles by normalizing them within a π/2 range centered around 0
         corrected_angles = [
             ((angle + np.pi / 4) % (np.pi / 2) - np.pi / 4) for angle in angles_peaks
@@ -121,23 +120,21 @@ class PointlessDeskewImageProcessor:
     def calculate_frequency_of_angles(
         self, angles_peaks: List[float]
     ) -> Dict[float, int]:
-        """
-        Calculates the frequency of each unique angle peak in a list.
+        """Calculates the frequency of each unique angle peak in a list.
 
-        This function iterates through the list of angle peaks and determines the frequency of each unique angle,
-        providing a dictionary where the keys are the unique angles and the values are the counts (frequencies) of
-        those angles in the input list.
+        Iterates through the list of angle peaks to determine the frequency of each unique angle. It returns a dictionary
+        where keys are the unique angles and values are their counts in the input list. This function treats each unique
+        numerical value as a distinct angle, without considering numerical proximity.
 
-        Parameters:
-        - angles_peaks (List[float]): A list of angles (in radians), where each angle is a floating-point number.
+        Args:
+            angles_peaks (List[float]): A list of angles in radians, each represented as a floating-point number.
 
         Returns:
-        - Dict[float, int]: A dictionary where each key is a unique angle from the input list and each value is the
-        frequency of that angle in the list.
+            Dict[float, int]: A dictionary mapping each unique angle to its frequency in the list.
 
         Example:
-        >>> calculate_frequency_of_angles([0.0, 0.5, 0.0])
-        {0.0: 2, 0.5: 1}
+            >>> calculate_frequency_of_angles([0.0, 0.5, 0.0])
+            {0.0: 2, 0.5: 1}
 
         Note:
         The function does not distinguish between angles that are numerically close but not exactly equal; each unique
@@ -156,11 +153,11 @@ class PointlessDeskewImageProcessor:
         frequent skew angle. If the input dictionary is empty, the function returns None, indicating that no skew angle
         can be determined from an empty dataset.
 
-        Parameters:
-        - freqs (Dict[float, int]): A dictionary with angles as keys (float) and their frequencies as values (int).
+        Args:
+            Dict[float, int]: A dictionary with angles as keys (float) and their frequencies as values (int).
 
         Returns:
-        - Optional[float]: The angle with the highest frequency or None if the input dictionary is empty. This return
+            Optional[float]: The angle with the highest frequency or None if the input dictionary is empty. This return
         value is of type Optional[float] to accommodate the possibility of an empty input.
 
         Example:

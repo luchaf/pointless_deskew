@@ -2,6 +2,7 @@ import os
 import tempfile
 import time
 from typing import List, Tuple
+
 import streamlit as st
 from doctr.io import DocumentFile
 from PIL import Image
@@ -14,16 +15,27 @@ class PointlessDeskewTextAnalyzer:
         self.predictor = predictor
         self.tokenizer = tokenizer
 
-    def normalize_scores(self, scores):
-        """Normalizes scores from multiple document orientations to determine the best orientation.
+    def normalize_scores(self, scores: dict) -> dict:
+        """Normalizes the scores for document orientations to identify the optimal orientation.
+
+        This method normalizes the given scores for different document orientations, facilitating
+        a more effective comparison across various orientations. Normalization is achieved by first
+        adjusting the scores to a 0 to 1 scale, where each score is inversely proportional to its
+        distance from the maximum score. This is done by subtracting each score from the minimum score,
+        dividing by the range of scores, and then inverting this value. The scores are then adjusted
+        to ensure that their sum equals 1.
 
         Args:
-            scores (dict): Scores for each orientation, where keys are orientation names and values are scores.
+            scores (dict): A dictionary with keys representing orientation names and values representing
+                        the scores associated with each orientation.
 
         Returns:
-            dict: Normalized scores for each orientation, with values between 0 and 1.
+            dict: A dictionary containing the normalized scores for each orientation, with values
+                adjusted to sum to 1, facilitating direct comparison and interpretation.
 
-        The normalization process involves subtracting the minimum score from all scores and then dividing by the range of scores (max - min). This allows for better comparison of results across different orientations.
+        Example:
+            Given scores {'0': 10, '90': 15, '180': 5, '270': 20}, the method returns normalized scores
+            such that each score is between 0 and 1, and all scores sum to 1.
         """
         min_score = min(scores.values())
         max_score = max(scores.values())
@@ -41,20 +53,37 @@ class PointlessDeskewTextAnalyzer:
     def bert_tokenizer_score_list_of_words(
         self, words: List[str], confidences: List[float], tokenizer: BertTokenizer
     ) -> float:
-        """
-        Computes a score for a list of words based on tokenization metrics using a BERT tokenizer,
-        while also considering the confidence of each word and the total number of words.
+        """Computes a score for a list of words using a BERT tokenizer and word confidences.
+
+        This method evaluates a list of words based on their tokenization by a BERT tokenizer and
+        the associated confidence scores for each word. The scoring criteria consider the presence of
+        unknown tokens ('[UNK]'), the average length of the subtokens, the proportion of recognized
+        subtokens, and the overall confidence in the words. The resulting score aims to estimate the
+        quality and meaningfulness of the input content, with lower scores indicating higher quality.
+
+        The scoring formula incorporates penalties for unknown tokens and rewards for longer subtokens
+        and a higher proportion of recognized tokens. Additionally, it accounts for the confidence scores
+        of the words, penalizing lower-confidence words more heavily. The score is normalized by the number
+        of words, and bonuses are applied for a higher number of words and longer average word length,
+        encouraging more substantial and confident input.
 
         Args:
-            words (List[str]): The list of words to be scored. Each word is a string.
-            confidences (List[float]): The list of confidence scores corresponding to each word.
-            tokenizer (BertTokenizer): An instance of BertTokenizer used for tokenizing the words.
+            words (List[str]): The list of words to be evaluated.
+            confidences (List[float]): Confidence scores for each word, ranging from 0 to 1.
+            tokenizer (BertTokenizer): The BERT tokenizer instance to use for tokenizing words.
 
         Returns:
-            float: An average score for the list of words, where a lower score indicates a higher
-                likelihood of the content being meaningful. The score is influenced by the presence
-                of unknown tokens, the average length of subtokens, the proportion of known
-                subtokens, and the confidence levels of the words.
+            float: The normalized score for the list of words. Lower scores indicate a higher
+                likelihood of the content being meaningful and well-tokenized. The score is
+                influenced by tokenization quality and word confidence levels.
+
+        Example:
+            >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            >>> words = ["example", "words", "to", "tokenize"]
+            >>> confidences = [0.9, 0.95, 1.0, 0.85]
+            >>> score = bert_tokenizer_score_list_of_words(words, confidences, tokenizer)
+            >>> print(score)
+            The output will be a float representing the normalized score for the input words.
         """
 
         if not words:  # Check if the list of words is empty
@@ -134,16 +163,40 @@ class PointlessDeskewTextAnalyzer:
     def analyze_ocr_results(
         self, docs: List[dict], tokenizer: BertTokenizer
     ) -> Tuple[int, dict]:
-        """
-        Analyzes OCR results from multiple document orientations to determine the best orientation.
-        Now also considers the confidence of each word in the OCR results.
+        """Analyzes OCR results from multiple document orientations to identify the optimal orientation.
+
+        This method evaluates OCR results from documents in different orientations to determine
+        which orientation yields the highest quality of text recognition. It uses a BERT tokenizer
+        to tokenize the words in the OCR results and considers the confidence scores of each word
+        to compute a score for each document orientation. The orientation with the lowest score,
+        indicating the highest quality of OCR results, is identified as the best orientation.
+
+        Each document's score is calculated based on the tokenization metrics and the confidence
+        levels of the words, with adjustments made to normalize the scores across different orientations.
+        The method returns the index of the best orientation in the input list and a dictionary of
+        normalized scores for all orientations, facilitating a comparison of OCR quality across
+        orientations.
 
         Args:
-            docs (List[dict]): List of OCR result documents for different orientations.
-            tokenizer (BertTokenizer): An instance of BertTokenizer used for tokenizing the words.
+            docs (List[dict]): A list of dictionaries, each representing OCR results for a document
+                            in a specific orientation. Each dictionary contains blocks, lines,
+                            and words, with each word having a value and a confidence score.
+            tokenizer (BertTokenizer): An instance of a BERT tokenizer for tokenizing the words
+                                    in the OCR results.
 
         Returns:
-            Tuple[int, dict]: The index of the best orientation and the OCR results document for that orientation.
+            Tuple[int, dict]: A tuple containing:
+                - The index of the best orientation in the input list, based on the analysis of OCR quality.
+                - A dictionary with keys as orientation identifiers (e.g., 'orientation 0') and values as
+                normalized scores, indicating the relative quality of OCR results for each orientation.
+
+        Example:
+            >>> docs = [{...}, {...}, {...}]  # OCR results for different orientations
+            >>> tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+            >>> best_index, adjusted_scores = analyze_ocr_results(docs, tokenizer)
+            >>> print(f"Best orientation index: {best_index}")
+            >>> for orientation, score in adjusted_scores.items():
+            ...     print(f"{orientation}: {score}")
         """
         scores = {}
         best_score = float("inf")
@@ -175,20 +228,29 @@ class PointlessDeskewTextAnalyzer:
         return best_index, adjusted_scores
 
     def crop_center_vertically(self, image, height=200):
-        """
-        Crops the center portion of an image vertically to a specified height while maintaining the original width.
-        This function calculates the vertical center of the image and crops the image to the specified height from
-        this center point. The width of the image remains unchanged.
+        """Crops the center portion of an image vertically to a specified height, maintaining the original width.
+
+        This function identifies the vertical center of the given image and performs a crop operation to
+        obtain a segment with the specified height, centered vertically. The width of the image is kept intact.
+        If the specified height exceeds the height of the image, no vertical cropping is done, and the original
+        image is returned as is.
 
         Args:
-            image (PIL.Image.Image): The image to be cropped. This should be an instance of a PIL Image.
-            height (int, optional): The height of the crop in pixels. Defaults to 200 pixels. If the specified height
-                is greater than the image height, the original image height is used, resulting in no vertical cropping.
+            image (PIL.Image.Image): The image to be cropped, provided as a PIL Image object.
+            height (int, optional): The target height for the crop, in pixels. Defaults to 200. The function
+                                    ensures that the crop does not exceed the original image's height.
 
         Returns:
-            PIL.Image.Image: A new image object representing the vertically cropped image. This image has the same width
-                as the original image and a height as specified by the `height` parameter, unless the original image
-                is shorter, in which case the original height is preserved.
+            PIL.Image.Image: A new PIL Image object representing the vertically cropped section of the original image.
+                            The cropped image will have the same width as the original and a height equal to the
+                            specified `height` parameter, unless the original height is smaller, in which case the
+                            original image height is retained.
+
+        Example:
+            >>> from PIL import Image
+            >>> original_image = Image.open("path/to/your/image.jpg")
+            >>> cropped_image = crop_center_vertically(original_image, 150)
+            >>> cropped_image.show()
         """
         # Get the dimensions of the original image
         img_width, img_height = image.size
@@ -203,22 +265,30 @@ class PointlessDeskewTextAnalyzer:
         return image.crop((0, top, img_width, bottom))
 
     def orientation_rotation_estimation(self, img: Image):
-        """
-        Estimates the orientation of an image by rotating it to several angles, applying OCR,
-        and determining the best orientation based on OCR results and tokenization metrics.
+        """Estimates the image orientation using OCR and tokenization metrics.
 
-        The function rotates the input image to 0, 90, -90, and 180 degrees, crops the center
-        vertically for each rotation, and saves these variants as temporary files. It then
-        processes each variant with an OCR predictor, analyzes the OCR results to estimate the
-        most probable correct orientation of the image, and finally returns the estimated angle
-        and the rotated image in this orientation.
+        This function estimates the most probable orientation of an image by rotating it to several predefined angles
+        (0, 90, -90, and 180 degrees), applying OCR to each rotated version, and analyzing the OCR results. The best
+        orientation is determined based on OCR quality and tokenization metrics. The image is then rotated to this
+        estimated best orientation.
+
+        The process involves creating temporary files for each rotated image variant, which are then processed with OCR.
+        The OCR results are analyzed to estimate the correct orientation of the image. This method also cleans up the
+        temporary files created during the process.
 
         Args:
-            img (Image): The input image to estimate orientation for. This should be a PIL Image instance.
+            img (Image): The input image for which to estimate the orientation. Expected to be a PIL Image instance.
 
         Returns:
-            tuple: A tuple containing the estimated angle (as an integer from the set [0, 90, -90, 180])
-                and the rotated image in the estimated correct orientation (as a PIL Image).
+            Tuple[int, Image, List[dict], dict]: A tuple containing:
+                - The estimated rotation angle as an integer (from the set [0, 90, -90, 180]) that likely corrects the image orientation.
+                - The rotated image in the estimated correct orientation as a PIL Image.
+                - A list of dictionaries, each representing OCR results for the image at each tested orientation.
+                - A dictionary with normalized scores for each orientation, aiding in understanding the OCR quality across orientations.
+
+        Note:
+            The estimation process includes a step of vertical center cropping on rotated images to focus OCR on the
+            central part of the image. This helps improve the speed of orientation estimation.
         """
         # Define potential rotation angles
         angles = [0, 90, -90, 180]
