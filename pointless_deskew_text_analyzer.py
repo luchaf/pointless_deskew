@@ -5,13 +5,20 @@ from typing import List, Tuple
 
 import streamlit as st
 from doctr.io import DocumentFile
+from doctr.models import ocr_predictor
 from PIL import Image
 from transformers import BertTokenizer
 
 
 class PointlessDeskewTextAnalyzer:
 
-    def __init__(self, predictor, tokenizer):
+    def __init__(
+        self,
+        predictor=ocr_predictor(
+            "db_mobilenet_v3_large", "crnn_mobilenet_v3_small", pretrained=True
+        ),
+        tokenizer=BertTokenizer.from_pretrained("bert-base-multilingual-cased"),
+    ):
         self.predictor = predictor
         self.tokenizer = tokenizer
 

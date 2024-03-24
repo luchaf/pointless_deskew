@@ -16,9 +16,10 @@ from skimage.transform import hough_line, hough_line_peaks
 
 class PointlessDeskewImageProcessor:
 
-    def __init__(self, text_analyzer, visualizer):
+    def __init__(self, text_analyzer, visualizer, plot_visualization):
         self.text_analyzer = text_analyzer
         self.visualizer = visualizer
+        self.plot_visualization = plot_visualization
 
     def convert_to_grayscale(self, image: np.ndarray) -> np.ndarray:
         """Convert an input image to grayscale.
@@ -83,9 +84,7 @@ class PointlessDeskewImageProcessor:
         # Convert angles and distances to lists and return them along with the accumulator
         return accumulator, angles.tolist(), distances.tolist(), edges
 
-    def filter_and_correct_angles(
-        self, angles_peaks: List[float], min_angle: float, max_angle: float
-    ) -> List[float]:
+    def filter_and_correct_angles(self, angles_peaks: List[float]) -> List[float]:
         """Filters and corrects a list of angle peaks to ensure they fall within a specified range.
 
         This function performs two main operations on the input list of angles: correction and filtering.
@@ -94,13 +93,10 @@ class PointlessDeskewImageProcessor:
         correction is to normalize the angles, ensuring that they are within a standard range for further processing.
 
         After correction, the function filters out any angles that do not fall within the specified minimum
-        and maximum angle range. This step ensures that only angles of interest, as defined by the min_angle
-        and max_angle parameters, are retained for further analysis or use.
+        and maximum angle range (abs(π/4)). This step ensures that only small angles of interest are retained for further analysis or use.
 
         Args:
             angles_peaks (List[float]): A list of angles (in radians) to be corrected and filtered.
-            min_angle (float): The minimum allowable angle (in radians) after correction.
-            max_angle (float): The maximum allowable angle (in radians) after correction.
 
         Returns:
             List[float]: A list of corrected angles that fall within the specified minimum and maximum angle range.
@@ -110,9 +106,9 @@ class PointlessDeskewImageProcessor:
             ((angle + np.pi / 4) % (np.pi / 2) - np.pi / 4) for angle in angles_peaks
         ]
 
-        # Filter the corrected angles to retain only those within the specified min and max range
+        # Filter the corrected angles to retain only those within (-π/4, π/4) range
         corrected_angles = [
-            angle for angle in corrected_angles if min_angle <= angle <= max_angle
+            angle for angle in corrected_angles if -np.pi / 4 <= angle <= np.pi / 4
         ]
 
         return corrected_angles
@@ -167,72 +163,6 @@ class PointlessDeskewImageProcessor:
 
         return max(freqs, key=freqs.get) if freqs else None
 
-    def rotate_image(self, image: Any, angle: float) -> Any:
-        """
-        Rotates an image by a specified angle, adjusting the image's dimensions to fit the rotated content and filling
-        the corners with white to maintain the aesthetic integrity of the image.
-
-        Rotating an image around its center without cropping the rotated image or leaving out any part of it requires
-        calculating the new image dimensions that can fully encompass the rotated image. This process involves:
-        - Computing the angle in radians for trigonometric calculations.
-        - Determining the new width and height of the image based on the rotation angle to ensure that the entire
-        image content is visible post-rotation.
-        - Calculating the center of the original image to set the pivot point for rotation.
-        - Creating a rotation matrix that defines the rotation parameters including the center, angle, and scale.
-        - Adjusting the translation part of the rotation matrix to ensure the rotated image is centered within the
-        new dimensions.
-        - Filling the corners, which do not contain image data after rotation, with white to provide a visually
-        seamless appearance.
-
-        This complexity arises because rotating an image is not simply about pivoting its pixels; it involves
-        spatial transformation, requiring adjustments to both the content and the canvas size to ensure the entire
-        image is correctly oriented and fully visible without distortion or unwanted cropping.
-
-        Parameters:
-        - image (Any): The input image to be rotated. The type here is generic to accommodate various image representations.
-        - angle (float): The angle in degrees by which to rotate the image clockwise.
-
-        Returns:
-        - Any: The rotated image with its dimensions adjusted to fit the entire content and corners filled with white.
-
-        """
-
-        # Calculate new image dimensions to ensure the whole image is visible after rotation
-        old_width, old_height = image.shape[1], image.shape[0]
-        angle_radian = math.radians(angle)
-        new_width = abs(np.sin(angle_radian) * old_height) + abs(
-            np.cos(angle_radian) * old_width
-        )
-        new_height = abs(np.sin(angle_radian) * old_width) + abs(
-            np.cos(angle_radian) * old_height
-        )
-
-        # Find the center of the original image to use as the pivot for rotation
-        image_center = np.array(image.shape[1::-1]) / 2
-
-        # Generate the rotation matrix
-        rotation_matrix = cv2.getRotationMatrix2D(tuple(image_center), angle, 1.0)
-
-        # Adjust the translation component of the rotation matrix
-        rotation_matrix[1, 2] += (new_width - old_width) / 2
-        rotation_matrix[0, 2] += (new_height - old_height) / 2
-
-        # Determine the border color based on the image type
-        if len(image.shape) == 3 and image.shape[2] == 3:  # Color image
-            borderValue = (255, 255, 255)  # White for BGR color images
-        else:  # Grayscale image
-            borderValue = (255,)  # White for grayscale images
-
-        # Convert new size dimensions to integers as expected by warpAffine
-        new_size = (int(round(new_width)), int(round(new_height)))
-
-        # Perform the rotation
-        rotated_image = cv2.warpAffine(
-            image, rotation_matrix, new_size, borderValue=borderValue
-        )
-
-        return rotated_image
-
     def determine_skew(
         self,
         image: np.ndarray,
@@ -281,9 +211,7 @@ class PointlessDeskewImageProcessor:
             accumulator, np.array(angles), np.array(distances), num_peaks=num_peaks
         )
         # Correct and filter angle peaks
-        corrected_angles = self.filter_and_correct_angles(
-            angles_peaks, -np.pi / 4, np.pi / 4
-        )
+        corrected_angles = self.filter_and_correct_angles(angles_peaks)
 
         # Optional visualization of the process
         if plot_visualization:
@@ -308,7 +236,7 @@ class PointlessDeskewImageProcessor:
     def process_image(
         self,
         image_path: str,
-        plot_visualization: bool = True,
+        plot_visualization: bool = False,
         image_scale_factor: float = 0.5,
     ):
         """
@@ -346,13 +274,12 @@ class PointlessDeskewImageProcessor:
 
         # Determine the skew of the resized image and get the skew angle and peaks
         skew_angle, angles_peaks, corrected_angles = self.determine_skew(
-            resized_image, plot_visualization=plot_visualization
+            resized_image, plot_visualization=self.plot_visualization
         )
 
         # If a skew angle is detected, correct the skew by rotating the original image
         if skew_angle is not None:
             # Rotate the original image to correct the skew
-            # rotated_image = rotate_image(image, skew_angle)
             rotated_image = Image.open(image_path).rotate(
                 skew_angle, expand=True, fillcolor="white"
             )  # quality needs to be tested
@@ -400,7 +327,9 @@ class PointlessDeskewImageProcessor:
         start_time = time.time()
 
         _, _, _, rotated_image = self.process_image(
-            tmp_file_path, plot_visualization=True, image_scale_factor=0.5
+            tmp_file_path,
+            plot_visualization=self.plot_visualization,
+            image_scale_factor=0.5,
         )
         if allow_up_to_180_degrees:
             _, rotated_image, _, _ = self.text_analyzer.orientation_rotation_estimation(
